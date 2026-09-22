@@ -55,12 +55,12 @@
     display: block;
   }
 
-  /* 昼/夜 切り替え: 画面中央を軸に時計回転させるだけのシンプルなラッパー */
+  /* 昼/夜 切り替え: 画面中央を軸に時計回転。nightTから毎フレーム直接角度を設定するので
+     CSS側のtransitionは持たせない(テキストの逆回転をフレームごとに正確に合わせるため)。 */
   #sceneRotator {
     position: fixed;
     inset: 0;
     transform-origin: 50% 50%;
-    transition: transform 1.1s cubic-bezier(0.6, 0.05, 0.2, 1); /* 仮値 */
     will-change: transform;
   }
 
@@ -529,30 +529,61 @@ function computeBananaNightResampled() {
 
 // ---------------------------------------------
 // 5. テキスト(すべて絶対座標)。昼/夜で内容を切り替え、nightTでクロスフェードする。
+//    #sceneRotator全体がnightTに応じて回転するので、テキストだけは画面上で
+//    位置が動かないよう、描画位置をあらかじめ逆回転させておく。
 // ---------------------------------------------
 const SKY_TEXT_DAY = 'metaphony.com';
-const SKY_TEXT_NIGHT = 'text dark sky';
-const SEA_TEXT_DAY = 'text sea';
-const SEA_TEXT_NIGHT = 'text dark sea';
+const SKY_TEXT_NIGHT = 'Created by Metaphony.';
+const SEA_TEXT_DAY = 'A site inspired by J.D. Salinger.';
+const SEA_TEXT_NIGHT = 'does the banana peel protecting at all?';
+
+// 画面上で固定して見せたい位置(sx,sy)を、#sceneRotatorの現在の回転角(nightT*180度)を
+// 打ち消すように逆回転させたキャンバス座標に変換する。
+function counterRotatePoint(sx, sy) {
+  const theta = nightT * Math.PI; // rotate(nightT*180deg) をラジアンに
+  const cx = windowW / 2, cy = windowH / 2;
+  const dx = sx - cx, dy = sy - cy;
+  const cos = Math.cos(theta), sin = Math.sin(theta);
+  return {
+    x: cx + (dx * cos + dy * sin),
+    y: cy + (-dx * sin + dy * cos),
+  };
+}
 
 function drawSeaText(ctx) {
+  const theta = nightT * Math.PI;
+  const cy = worldMidY + (windowH - worldMidY) * 0.55;
+  const p = counterRotatePoint(windowW / 2, cy);
+  const baseSize = Math.min(windowW, windowH) * 0.045;
+
   ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(-theta); // 位置だけでなく、文字の向きも逆回転させて正立させる
+
+  // 昼側: 黄色いかたちと同じように、収縮しながら消える(フェードだけでなくスケールも0へ)
+  ctx.save();
+  const dayScale = Math.max(0.001, 1 - nightT);
+  ctx.scale(dayScale, dayScale);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ffffff';
-  const baseSize = Math.min(windowW, windowH) * 0.045;
   ctx.font = `italic 400 ${baseSize}px 'EB Garamond', Georgia, serif`;
-  const cy = worldMidY + (windowH - worldMidY) * 0.55;
-
   ctx.globalAlpha = 0.95 * (1 - nightT);
-  ctx.fillText(SEA_TEXT_DAY, windowW / 2, cy);
+  ctx.fillText(SEA_TEXT_DAY, 0, 0);
+  ctx.restore();
 
+  // 夜側: そのまま
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `italic 400 ${baseSize}px 'EB Garamond', Georgia, serif`;
   ctx.globalAlpha = 0.95 * nightT;
-  ctx.fillText(SEA_TEXT_NIGHT, windowW / 2, cy);
+  ctx.fillText(SEA_TEXT_NIGHT, 0, 0);
   ctx.restore();
 }
 
 function drawWordmark(ctx) {
+  // 仕様変更: この文字は逆回転させず、黒/黄色/バナナと同じく画面の回転にそのまま従わせる
   ctx.save();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -564,9 +595,20 @@ function drawWordmark(ctx) {
 
   ctx.globalAlpha = 1 - nightT;
   ctx.fillText(SKY_TEXT_DAY, windowW / 2, y);
+  ctx.restore();
 
+  // 夜側の文言は回転にそのまま従うので、あらかじめ180度回転させて描いておく。
+  // 画面全体の180度回転と打ち消し合って、夜(反転しきった状態)で正立して読めるようにするため。
+  ctx.save();
+  ctx.translate(windowW / 2, y);
+  ctx.rotate(Math.PI);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `500 ${size}px 'EB Garamond', Georgia, serif`;
+  ctx.fillStyle = '#ffffff';
+  ctx.letterSpacing = '0.14em';
   ctx.globalAlpha = nightT;
-  ctx.fillText(SKY_TEXT_NIGHT, windowW / 2, y);
+  ctx.fillText(SKY_TEXT_NIGHT, 0, 0);
   ctx.restore();
 }
 
@@ -620,12 +662,6 @@ function renderScene(ctx, offsetX, offsetY, t) {
   ctx.fillStyle = '#000000';
   ctx.fill(wavePath);
 
-  // テキスト: 海の範囲だけにクリップ。昼/夜の文言をクロスフェードで切り替える
-  ctx.save();
-  ctx.clip(wavePath);
-  drawSeaText(ctx);
-  ctx.restore();
-
   // 黄色いかたち: 海の輪郭 -> 円 -> バナナの輪郭へ、頂点対応で直接変形させる(画面下部、黒い海の中へ)。
   // 色はずっと黄色のまま(色を変えるのではなく、かたち自体を変える)。
   // 昼(nightT=0)では海と完全に同じ形・同じ黄色で重なるので、下の黒い海は見えない。
@@ -648,6 +684,13 @@ function renderScene(ctx, offsetX, offsetY, t) {
     ctx.fill(morphPath);
   }
 
+  // テキスト: 海の範囲だけにクリップ。黄色いかたちより後に描くことで、
+  // 昼の間も不透明な黄色に隠れず前面に出るようにする。
+  ctx.save();
+  ctx.clip(wavePath);
+  drawSeaText(ctx);
+  ctx.restore();
+
   ctx.restore();
 }
 
@@ -659,6 +702,8 @@ function frame(now) {
 
   nightT += (nightTarget - nightT) * 0.05; // 仮値: イージングの速さ
   curlProgress += (curlTarget - curlProgress) * curlEaseSpeed; // 仮値: 開閉のイージング
+
+  sceneRotator.style.transform = `rotate(${nightT * 180}deg)`; // 常に時計回りに正立(0度)から反転(180度)へ
 
   bgCtx.clearRect(0, 0, windowW, windowH);
   renderScene(bgCtx, 0, 0, t);
@@ -742,32 +787,19 @@ resize();
 requestAnimationFrame(frame);
 
 // ---------------------------------------------
-// 9. 右上のボタン: 押すたびに画面中央を軸に時計回転(常に+方向へ)。ボタン自体のアイコンは
-//    昼→夜への切り替え時は三日月、夜→昼への切り替え時は太陽を表示する。
+// 9. 右上のボタン: 押すたびに画面中央を軸に時計回転(nightTに連動、常に0→180度)。
+//    ボタン自体のアイコンは昼→夜への切り替え時は三日月、夜→昼への切り替え時は太陽を表示する。
 //    同時に空は青のまま、海は黒くなり、黄色いかたちは海の輪郭 -> 円 -> バナナの輪郭へ
-//    変形しながら右下(反転時は左上になる想定)へ移動する。
+//    変形しながら右下(反転により画面上では左上になる)へ移動する。
 //    黒バナナ(昼のアクセント)は下の黒い海へ沈んで消える。
 //
-//    ※ 180度回転させると、キャンバス内の「上」が画面では「下」に表示されるため、
-//    黒/黄色の配置もそれに合わせて反転させる必要があります(未対応)。
-//    ひとまず回転自体はオフにして、色とかたちの変形だけを確認できるようにしています。
-//    ENABLE_ROTATION_FLIP を true にすると180度回転が有効になります。
-//
-//    【重要・要記憶】反転(ENABLE_ROTATION_FLIP)を有効にする際、テキスト
-//    (drawWordmark / drawSeaText)は画面上で位置を動かさない方針に決定済み。
-//    黒/黄色の塗り分けや黄色バナナの位置は反転に合わせて座標を点対称に
-//    調整する必要があるが、テキストの座標だけは対象外にすること。
+//    テキスト(drawWordmark / drawSeaText)だけは回転の影響を受けないよう、
+//    描画位置をnightTに応じて逆回転(counterRotate)させて画面上で固定して見せている。
 // ---------------------------------------------
-const ENABLE_ROTATION_FLIP = false; // 仮値: 配置の反転対応ができ次第 true にする
 let isNight = false;
-let rotationDeg = 0;
 moonBtn.addEventListener('click', () => {
   isNight = !isNight;
   moonBtn.classList.toggle('is-night', isNight);
-  if (ENABLE_ROTATION_FLIP) {
-    rotationDeg += 180; // 常に増加方向 = 常に時計回り
-    sceneRotator.style.transform = `rotate(${rotationDeg}deg)`;
-  }
   nightTarget = isNight ? 1 : 0;
 });
 </script>
