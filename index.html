@@ -2,6 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Banana.com</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -502,7 +503,7 @@ function computeBananaNightResampled() {
   const y = windowH * 0.82; // 仮値: 同上
   const size = Math.min(windowW, windowH) * 0.2; // 仮値
   const scale = size / bananaSpan;
-  const rot = bananaHorizontalRot + (20 * Math.PI / 180); // 時計回りに20度ほど傾ける
+  const rot = bananaHorizontalRot + (110 * Math.PI / 180); // 時計回りに90度+20度=110度
   const cos = Math.cos(rot), sin = Math.sin(rot);
   const abs = bananaInfo.pts.map(p => {
     const lx = (p.x - bananaInfo.cx) * scale;
@@ -781,8 +782,18 @@ document.addEventListener('pointerup', endDrag);
 document.addEventListener('pointercancel', endDrag);
 
 window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', resize);
+// スマホのブラウザはアドレスバーの出し引きでinnerHeightが動的に変わり、
+// 通常のresizeイベントだけでは追いきれないことがあるため、visualViewportも監視する
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', resize);
+  window.visualViewport.addEventListener('scroll', resize);
+}
 initThree();
 resize();
+// 一部のモバイルブラウザは読み込み直後のinnerHeightが実際の表示と一瞬ずれることがあるため、
+// 少し遅れて念のため再計算する
+setTimeout(resize, 300);
 requestAnimationFrame(frame);
 
 // ---------------------------------------------
