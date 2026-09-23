@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="ja" class="locked">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -34,6 +34,11 @@ body.expanded{ --mx:0px; --my:0px; }
 html,body{background:var(--paper);color:var(--ink);}
 body{ font-family:'Cormorant Garamond', serif; }
 body.locked{ overflow:hidden; height:100dvh; }
+/* body.locked alone does not stop the page from scrolling: in standards-mode documents the actual
+   scrolling element is html, not body, so html needs the same lock. This is also what let a
+   reload's restored scroll position "leak" through the supposedly-locked pre-click phase. */
+html.locked{ overflow:hidden; }
+html{ overflow-anchor:none; } /* don't let layout shifts during load re-nudge the scroll position */
 
 /* --- finale: reverse scroll swaps paper and ink. The two colours are registered so that a change
    of --paper / --ink on :root is animated, and everything drawn with var(--paper) / var(--ink)
@@ -135,6 +140,10 @@ body.orbiting .sub-entry .year{ opacity:0; }
   font-style:italic;
   font-size:clamp(11px,3vw,14px);
   white-space:nowrap;
+  will-change:opacity, transform; /* force its own compositing layer: descendants of a preserve-3d
+    ancestor (.axes) can otherwise fail to recomposite reliably on opacity-only changes, especially
+    with an adjacent WebGL canvas (three.js) forcing its own recomposite every frame on a separate
+    rAF loop — the classic symptom is exactly "the written value is correct, the paint isn't". */
 }
 .story-entry .story-year{
   margin-left:.6em;
@@ -148,6 +157,7 @@ body.orbiting .sub-entry .year{ opacity:0; }
   width:1px; height:20vh;
   transform-origin:top left;
   transform:scaleY(0) rotate(0deg);
+  will-change:opacity, transform;
 }
 
 /* Glass Saga's 6 works = story #1 (Bananafish, already on screen) + these 5. Same start and
@@ -166,6 +176,7 @@ body.orbiting .sub-entry .year{ opacity:0; }
   font-style:italic;
   font-size:clamp(12px,3.3vw,16px);
   white-space:nowrap;
+  will-change:opacity, transform;
 }
 .sub-entry .year{
   margin-left:.6em;
@@ -179,6 +190,7 @@ body.orbiting .sub-entry .year{ opacity:0; }
   width:1px; height:20vh;
   transform-origin:top center;
   transform:scaleY(0);
+  will-change:opacity, transform;
 }
 
 /* "The Glass Saga" — replaces the individual work titles once axis-v starts
@@ -196,6 +208,7 @@ body.orbiting .sub-entry .year{ opacity:0; }
   font-size:clamp(19px,5vw,28px);
   white-space:nowrap;
   opacity:0;
+  will-change:opacity, transform;
 }
 
 /* --- orbit control: camera orbits around O — the point where the Y (Nine)
@@ -477,7 +490,7 @@ body.orbiting .sub-entry .year{ opacity:0; }
   </div>
 
   <div class="question-slot">
-    <p class="question" id="q1">Why is his time stopped?</p>
+    <p class="question" id="q1">Why is his time frozen?</p>
     <p class="question" id="q2">Why did he shoot himself?</p>
     <p class="question" id="q3">Why is that shot the beginning?</p>
   </div>
@@ -505,6 +518,15 @@ body.orbiting .sub-entry .year{ opacity:0; }
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// html is now genuinely locked (overflow:hidden) from the very first parsed byte via its static
+// 'locked' class, so the page cannot actually scroll before the starburst is clicked, regardless of
+// what scrollY the browser tries to restore on reload. history.scrollRestoration + scrollTo(0,0) is
+// kept here as extra insurance for edge cases (e.g. bfcache restores via 'pageshow', which can skip
+// re-running this module).
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+window.scrollTo(0, 0);
+window.addEventListener('pageshow', () => window.scrollTo(0, 0));
 
 const starCanvas = document.getElementById('starCanvas');
 const STAR_COUNT = 500;
@@ -1210,6 +1232,7 @@ burst.addEventListener('click', () => {
   burst.classList.add('opened');
   entryCatcher.classList.add('show');
   document.body.classList.remove('locked');
+  document.documentElement.classList.remove('locked');
   setTimeout(() => { hintOn = true; updateHint(window.scrollY / window.innerHeight); }, 900);
 });
 
@@ -1244,9 +1267,9 @@ const GLASS_TITLE_LEN = 0.3; // and only then does "The Glass Saga" appear
 const GLASS_OUT = 12;      // vw: how far to the left each of the 6 works drifts while it fades
 const GLASS_WIPE = 0.07;   // fraction of the axis length over which a row fades while the line passes it
 
-const Q1 = [0, 0.30, 0.55, 0.85];                                     // "Why is his time stopped?": in, hold, out
+const Q1 = [0, 0.15, 0.90, 1.0];                                      // "Why is his time frozen?": quick in, long hold until the star-only gap, quick out
 const NINE = [Q1[3] + GAP, Q1[3] + GAP + 0.30];                       // Nine Stories slides in
-const Q2 = [0, 0.25, 0.50, 0.80].map(v => NINE[1] + GAP + v);         // "Why did he shoot himself?"
+const Q2 = [0, 0.15, 0.90, 1.0].map(v => NINE[1] + GAP + v);         // "Why did he shoot himself?"
 const STORY_START = Q2[3] + GAP, STORY_STEP = 0.09;
 const STORY_RANGES = stories.map((_, i) => [STORY_START + i * STORY_STEP, STORY_START + i * STORY_STEP + STORY_STEP]);
 const STORY_END = STORY_START + stories.length * STORY_STEP;
@@ -1256,7 +1279,7 @@ const ROTATE = [STORY_VLINE[1] + AXIS_LAG, STORY_VLINE[1] + AXIS_LAG + AXIS_TURN
 // (Teddy into De Daumier, De Daumier into Pretty Mouth, …). Starts together with the rotation of
 // the vertical axis; only A Perfect Day is left when the Y axis has turned horizontal.
 const COLLAPSE = [ROTATE[0], ROTATE[1]];
-const Q3 = [0, 0.25, 0.50, 0.75].map(v => ROTATE[1] + GAP + v);       // "Why is that shot the beginning?"
+const Q3 = [0, 0.15, 0.90, 1.0].map(v => ROTATE[1] + GAP + v);       // "Why is that shot the beginning?"
 const MERGE_D = (COLLAPSE[1] - COLLAPSE[0]) / (stories.length - 1);
 
 const FRANNY_START = Q3[3] + GAP, FRANNY_STEP = 0.12;
@@ -1307,6 +1330,7 @@ function onScroll(){
 
   const rotT = rangeT(su, ROTATE[0], ROTATE[1]);
   stories.forEach((el, i) => {
+    el.style.transition = '';
     const [a, b] = STORY_RANGES[i];
     const t = rangeT(su, a, b);
     if (i === 0) {                                  // A Perfect Day stays until the Z axis takes over (then it leaves with the other five)
@@ -1329,6 +1353,7 @@ function onScroll(){
   axisV.style.setProperty('--o', vT * 0.8);
 
   subs.forEach((el, i) => {
+    el.style.transition = '';
     const [a, b] = SUB_RANGES[i];
     const t = rangeT(su, a, b);
     const w = glassWipe(vT, i + 1);
@@ -1356,19 +1381,71 @@ function onScroll(){
   }
 }
 
-// onScroll runs at most once per rendered frame: native scroll events on mobile can fire faster
-// than the screen repaints, especially during a fast fling, and running the ~30 style writes below
-// for every one of them was extra work with no visible benefit — the frame budget is better spent
-// keeping up with the render loop. A queued call always uses the freshest scrollY, so nothing is
-// skipped, only coalesced.
-let scrollQueued = false;
-function queueScroll(){
-  if (scrollQueued) return;
-  scrollQueued = true;
-  requestAnimationFrame(() => { scrollQueued = false; onScroll(); });
+// Polling scrollY every animation frame (rather than waiting for 'scroll' events, which mobile
+// dispatches far more sparsely than the display refresh during a fling) removes one possible source
+// of stale values. It turned out not to be the actual cause of the stuck half-faded titles, though:
+// `su` is a pure function of scrollY, so once a fling's momentum genuinely comes to rest, whatever
+// opacity that final scrollY produces IS the correct value for that position — even if that position
+// happens to sit in the middle of a narrow transition window (GLASS_WIPE / MERGE_D are only ~7% of
+// the axis length). A fast fling can rest anywhere, including squarely inside one of those, and
+// nothing about the scroll math is "wrong" when that happens — it's just an unfinished-looking rest
+// state the scrubbing design allows. `finishPendingWipes` below (triggered once scrolling actually
+// settles) is what cleans that up: it doesn't touch scroll position, it just eases whichever
+// element(s) are mid-window to their nearer completed edge.
+let lastPolledY = -1;
+function scrollLoop(){
+  const y = window.scrollY;
+  if (y !== lastPolledY) { lastPolledY = y; onScroll(); }
+  if (!sequenceStarted) requestAnimationFrame(scrollLoop);
 }
-window.addEventListener('scroll', queueScroll, { passive: true });
-onScroll();
+window.addEventListener('resize', () => { lastPolledY = -1; }, { passive: true });
+requestAnimationFrame(scrollLoop);
+
+// --- settle cleanup: a fling can come to rest with su inside one of the narrow glass-wipe (6 Glass
+// Saga works) or merge (9 Stories fold-up) windows, leaving a half-faded title on screen even though
+// the value shown is mathematically correct for that exact scroll position. Once scrolling has
+// genuinely stopped, nudge any such element the rest of the way to whichever edge (fully shown /
+// fully gone) it was already closer to — a cosmetic finish, not a scroll-position change, so it
+// never fights active scrubbing (onScroll clears the transition it uses the instant real scrolling
+// resumes).
+const nearestEdge = x => (x < 0.5 ? 0 : 1);
+function finishPendingWipes(){
+  if (sequenceStarted) return;
+  const su = window.scrollY / window.innerHeight;
+  const vT = rangeT(su, FRANNY_AXIS_V[0], FRANNY_AXIS_V[1]);
+  const settle = (el, w, t, k) => {
+    if (w <= 0 || w >= 1) return;
+    const edge = nearestEdge(w);
+    el.style.transition = 'opacity .25s ease, transform .25s ease';
+    el.style.opacity = t * (1 - edge);
+    el.style.transform = k === undefined
+      ? `translate(${-edge * GLASS_OUT}vw, ${(1 - t) * 10}px)`
+      : `translateY(${(1 - t) * 10 - edge * storyStep}px)`;
+    setTimeout(() => { el.style.transition = ''; }, 260);
+  };
+  stories.forEach((el, i) => {
+    const [a, b] = STORY_RANGES[i];
+    const t = rangeT(su, a, b);
+    if (i === 0) { settle(el, glassWipe(vT, 0), t); return; }
+    const k = stories.length - 1 - i;
+    const m = rangeT(su, COLLAPSE[0] + k * MERGE_D, COLLAPSE[0] + (k + 1) * MERGE_D);
+    settle(el, m, t, k);
+  });
+  subs.forEach((el, i) => {
+    const [a, b] = SUB_RANGES[i];
+    const t = rangeT(su, a, b);
+    settle(el, glassWipe(vT, i + 1), t);
+  });
+}
+let scrollEndTimer = null;
+if ('onscrollend' in window) {
+  window.addEventListener('scrollend', finishPendingWipes, { passive: true });
+} else {
+  window.addEventListener('scroll', () => {
+    clearTimeout(scrollEndTimer);
+    scrollEndTimer = setTimeout(finishPendingWipes, 150);
+  }, { passive: true });
+}
 
 // reverse scroll = any way of going back up the page. reverseScroll() does nothing until the
 // home position has been reached (armEnding), and only ever starts the finale once.
