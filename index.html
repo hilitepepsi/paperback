@@ -67,8 +67,8 @@
   /* 右上の月ボタン */
   #moonBtn {
     position: fixed;
-    top: 22px;
-    right: 22px;
+    bottom: 22px;
+    left: 22px;
     width: 44px;
     height: 44px;
     border-radius: 50%;
@@ -300,8 +300,7 @@ function layoutBanana() {
 // 3. サイズ計算: スマホ=ブラウザの画角そのまま、PC=文庫本の比率
 // ---------------------------------------------
 function isPhone() {
-  const coarse = window.matchMedia('(pointer: coarse)').matches;
-  return coarse && Math.min(window.innerWidth, window.innerHeight) < 820;
+  return window.innerWidth < 700; // 仮値: この幅未満はスマホ扱い(画角そのままが扉になる)
 }
 const PAPERBACK_RATIO = 0.64; // 仮値: width/height
 
@@ -499,11 +498,11 @@ function generateCirclePoints(cx, cy, r, n) {
 let circleStageResampled = null;
 let bananaNightTargetResampled = null;
 function computeBananaNightResampled() {
-  const x = windowW * 0.82; // 仮値: 右下
-  const y = windowH * 0.82; // 仮値: 右下(反転を有効にした際は点対称で左上に来る想定)
+  const x = windowW * 0.18; // 仮値: キャンバス内は左下だが、180度回転後に画面上は右上になる
+  const y = windowH * 0.82; // 仮値: 同上
   const size = Math.min(windowW, windowH) * 0.2; // 仮値
   const scale = size / bananaSpan;
-  const rot = bananaHorizontalRot + Math.PI / 2; // 時計回りに90度追加
+  const rot = bananaHorizontalRot + (20 * Math.PI / 180); // 時計回りに20度ほど傾ける
   const cos = Math.cos(rot), sin = Math.sin(rot);
   const abs = bananaInfo.pts.map(p => {
     const lx = (p.x - bananaInfo.cx) * scale;
@@ -562,13 +561,13 @@ function drawSeaText(ctx) {
 
   // 昼側: 黄色いかたちと同じように、収縮しながら消える(フェードだけでなくスケールも0へ)
   ctx.save();
-  const dayScale = Math.max(0.001, 1 - nightT);
+  const dayScale = Math.max(0.001, 1 - nightT * 2.6); // 仮値: 収縮速度を上げた
   ctx.scale(dayScale, dayScale);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ffffff';
   ctx.font = `italic 400 ${baseSize}px 'EB Garamond', Georgia, serif`;
-  ctx.globalAlpha = 0.95 * (1 - nightT);
+  ctx.globalAlpha = Math.max(0, 0.95 * (1 - nightT * 2.6));
   ctx.fillText(SEA_TEXT_DAY, 0, 0);
   ctx.restore();
 
