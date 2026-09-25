@@ -369,12 +369,14 @@ function waveY(x, t) {
 }
 
 // 波(海)の輪郭を点の配列として作る。Path2Dにも、輪郭のリサンプリング(形の変形)にも使う。
+const SEA_EDGE_MARGIN = 40; // 仮値: 丸め処理で端が内側に入る分を見込んで横に広げておく
+
 function buildWavePoints(t) {
   const pts = [];
   const step = 6;
-  for (let x = 0; x <= windowW; x += step) pts.push({ x, y: waveY(x, t) });
-  pts.push({ x: windowW, y: windowH });
-  pts.push({ x: 0, y: windowH });
+  for (let x = -SEA_EDGE_MARGIN; x <= windowW + SEA_EDGE_MARGIN; x += step) pts.push({ x, y: waveY(x, t) });
+  pts.push({ x: windowW + SEA_EDGE_MARGIN, y: windowH });
+  pts.push({ x: -SEA_EDGE_MARGIN, y: windowH });
   return pts;
 }
 
@@ -532,15 +534,15 @@ function computeBananaNightResampled() {
 //    #sceneRotator全体がnightTに応じて回転するので、テキストだけは画面上で
 //    位置が動かないよう、描画位置をあらかじめ逆回転させておく。
 // ---------------------------------------------
-const SKY_TEXT_DAY = 'metaphony.com';
+const SKY_TEXT_DAY = 'METAPHONY.COM';
 const SKY_TEXT_NIGHT = 'Created by Metaphony.';
 const SEA_TEXT_DAY = 'A site inspired by J.D. Salinger.';
-const SEA_TEXT_NIGHT = 'does the banana peel protecting at all?';
+const SEA_TEXT_NIGHT = 'Does the banana peel protect anything at all?';
 
-// 画面上で固定して見せたい位置(sx,sy)を、#sceneRotatorの現在の回転角(nightT*180度)を
+// 画面上で固定して見せたい位置(sx,sy)を、#sceneRotatorの現在の回転角(rotationDeg)を
 // 打ち消すように逆回転させたキャンバス座標に変換する。
 function counterRotatePoint(sx, sy) {
-  const theta = nightT * Math.PI; // rotate(nightT*180deg) をラジアンに
+  const theta = rotationDeg * Math.PI / 180; // rotate(rotationDeg deg) をラジアンに
   const cx = windowW / 2, cy = windowH / 2;
   const dx = sx - cx, dy = sy - cy;
   const cos = Math.cos(theta), sin = Math.sin(theta);
@@ -551,7 +553,7 @@ function counterRotatePoint(sx, sy) {
 }
 
 function drawSeaText(ctx) {
-  const theta = nightT * Math.PI;
+  const theta = rotationDeg * Math.PI / 180;
   const cy = worldMidY + (windowH - worldMidY) * 0.55;
   const p = counterRotatePoint(windowW / 2, cy);
   const baseSize = Math.min(windowW, windowH) * 0.045;
@@ -618,6 +620,11 @@ function drawWordmark(ctx) {
 let nightT = 0;
 let nightTarget = 0;
 
+// 画面の回転角。nightTとは別に持ち、目標値を常に+180ずつ増やすことで、
+// 昼→夜・夜→昼どちらの切り替えでも必ず時計回りになるようにする。
+let rotationDeg = 0;
+let rotationTarget = 0;
+
 // ---------------------------------------------
 // 7. シーン全体を絶対座標で描く1つの関数。
 //    bg(オフセット0)にも、front(book矩形の分だけ平行移動)にも同じ関数を使うことで、
@@ -634,10 +641,10 @@ function renderScene(ctx, offsetX, offsetY, t) {
   ctx.save();
   ctx.translate(-offsetX, -offsetY);
 
-  // 空(矩形): 黒と青の配置が逆だったので修正。空はずっと青のまま変えない
+  // 空(矩形): 青を土台(ベース)にする。
   const skyGrad = ctx.createLinearGradient(0, 0, 0, windowH);
-  skyGrad.addColorStop(0, '#1a4d92');
-  skyGrad.addColorStop(1, '#0e2c56');
+  skyGrad.addColorStop(0, '#0d2c5c');
+  skyGrad.addColorStop(1, '#061632');
   ctx.fillStyle = skyGrad;
   ctx.fillRect(0, 0, windowW, windowH);
 
@@ -645,8 +652,8 @@ function renderScene(ctx, offsetX, offsetY, t) {
 
   // 黒バナナ(昼の中央のアクセント): 波の"手前"にするため、波より先に描く。
   // 波の実際の値に合わせて上下させ、波に浮かんでいるように見せる。
-  // 夜にはフェードではなく、そのまま下の黒い海へ沈めて引きずり込む(海は常に黒なので、
-  // 沈んだ分だけ後で描かれる海の塗りに覆われて自然に見えなくなる)。
+  // 夜にはフェードではなく、そのまま下の海へ沈めて引きずり込む(海の塗りは後で描かれるので、
+  // 沈んだ分だけ自然に覆われて見えなくなる)。
   if (bananaDay) {
     const bob = (waveY(bananaDay.x, t) - worldMidY) * BANANA_BOB_SCALE * (1 - nightT);
     const sinkY = windowH + bananaDay.size * 0.6; // 仮値: 海の底、画面外まで沈める
@@ -654,9 +661,7 @@ function renderScene(ctx, offsetX, offsetY, t) {
     drawBanana(ctx, bananaDay.x, by, bananaDay.size, '#000000');
   }
 
-  // 海(波の領域): 常に黒(昼はこの上に黄色いかたちがぴったり重なって隠れるので、
-  // 黄色→黒のフェードを用意する必要はない。最初から黒でよい)
-  // 扉の奥(revealLayer)・黒バナナと完全に同じ黒にするため、グラデーションはやめて単色にする
+  // 海(波の領域): 青い土台の上に黒を乗せるだけのシンプルな2層構成にする
   const wavePts = buildWavePoints(t);
   const wavePath = buildSeaPath(wavePts);
   ctx.fillStyle = '#000000';
@@ -701,9 +706,10 @@ function frame(now) {
   const t = now * 0.001;
 
   nightT += (nightTarget - nightT) * 0.05; // 仮値: イージングの速さ
+  rotationDeg += (rotationTarget - rotationDeg) * 0.05; // nightTと同じ速さで追従させる
   curlProgress += (curlTarget - curlProgress) * curlEaseSpeed; // 仮値: 開閉のイージング
 
-  sceneRotator.style.transform = `rotate(${nightT * 180}deg)`; // 常に時計回りに正立(0度)から反転(180度)へ
+  sceneRotator.style.transform = `rotate(${rotationDeg}deg)`; // 常に時計回り(目標値を常に+180するため)
 
   bgCtx.clearRect(0, 0, windowW, windowH);
   renderScene(bgCtx, 0, 0, t);
@@ -734,6 +740,7 @@ function currentBananaPos() {
 }
 
 function isOverBlackBanana(clientX, clientY) {
+  if (isNight) return false; // 夜は扉を開けない(黒バナナのクリック判定なし)
   const b = currentBananaPos();
   if (!b) return false;
   const dx = clientX - b.x;
@@ -811,6 +818,7 @@ moonBtn.addEventListener('click', () => {
   isNight = !isNight;
   moonBtn.classList.toggle('is-night', isNight);
   nightTarget = isNight ? 1 : 0;
+  rotationTarget += 180; // 常に増加方向 = 常に時計回り
 });
 </script>
 </body>
