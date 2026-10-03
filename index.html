@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Banana.com</title>
+<meta name="description" content="An interactive space built around J.D. Salinger. Nobody knows which ocean the banana prefers.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
@@ -54,6 +55,10 @@
   }
   #stage canvas {
     display: block;
+    /* 背景(2D canvas)との合成レイヤーが別なため、回転時にアンチエイリアスの
+       違いで境界線が見えることがある。ごくわずかに拡大して背景に重ねることで隠す。 */
+    transform: scale(1.008); /* 仮値 */
+    transform-origin: center center;
   }
 
   /* 昼/夜 切り替え: 画面中央を軸に時計回転。nightTから毎フレーム直接角度を設定するので
@@ -132,6 +137,7 @@ const CURL_MAX_RADIANS = Math.PI * 1.6; // 仮値: 自由端が最大でどこ�
 
 let renderer, scene, camera, geometry, frontMesh, backMesh, canvasTexture;
 let curlProgress = 0; // 0(閉じている) 〜 1(全開)
+let layersVisible = true; // revealLayer / stage の表示状態(frame()で切り替える)
 
 function initThree() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -534,10 +540,11 @@ function computeBananaNightResampled() {
 //    #sceneRotator全体がnightTに応じて回転するので、テキストだけは画面上で
 //    位置が動かないよう、描画位置をあらかじめ逆回転させておく。
 // ---------------------------------------------
-const SKY_TEXT_DAY = 'METAPHONY.COM';
-const SKY_TEXT_NIGHT = 'Created by Metaphony.';
-const SEA_TEXT_DAY = 'A site inspired by J.D. Salinger.';
-const SEA_TEXT_NIGHT = 'Does the banana peel protect anything at all?';
+const SKY_TEXT_DAY = 'Just a banana';
+const SKY_TEXT_NIGHT = 'Reflected by Metaphony.';
+const SEA_TEXT_DAY = ['The banana was here.', 'Someone found it.', 'The banana was here either way.'];
+const SEA_TEXT_NIGHT = ['An apple fell. There was a discoverer.', 'It will never fall.'];
+const SEA_TEXT_NIGHT_LOWER = ['Existence is not discovery.', 'It is preserved in the sea of information.'];
 
 // 画面上で固定して見せたい位置(sx,sy)を、#sceneRotatorの現在の回転角(rotationDeg)を
 // 打ち消すように逆回転させたキャンバス座標に変換する。
@@ -554,16 +561,14 @@ function counterRotatePoint(sx, sy) {
 
 function drawSeaText(ctx) {
   const theta = rotationDeg * Math.PI / 180;
-  const cy = worldMidY + (windowH - worldMidY) * 0.55;
-  const p = counterRotatePoint(windowW / 2, cy);
   const baseSize = Math.min(windowW, windowH) * 0.045;
 
+  // 昼側: 黄色いかたちと同じように、収縮しながら消える(フェードだけでなくスケールも0へ)
+  const cy = worldMidY + (windowH - worldMidY) * 0.55;
+  const p = counterRotatePoint(windowW / 2, cy);
   ctx.save();
   ctx.translate(p.x, p.y);
   ctx.rotate(-theta); // 位置だけでなく、文字の向きも逆回転させて正立させる
-
-  // 昼側: 黄色いかたちと同じように、収縮しながら消える(フェードだけでなくスケールも0へ)
-  ctx.save();
   const dayScale = Math.max(0.001, 1 - nightT * 2.6); // 仮値: 収縮速度を上げた
   ctx.scale(dayScale, dayScale);
   ctx.textAlign = 'center';
@@ -571,16 +576,52 @@ function drawSeaText(ctx) {
   ctx.fillStyle = '#ffffff';
   ctx.font = `italic 400 ${baseSize}px 'EB Garamond', Georgia, serif`;
   ctx.globalAlpha = Math.max(0, 0.95 * (1 - nightT * 2.6));
-  ctx.fillText(SEA_TEXT_DAY, 0, 0);
+  const dayLineHeight = baseSize * 1.5;
+  SEA_TEXT_DAY.forEach((line, i) => {
+    ctx.fillText(line, 0, (i - (SEA_TEXT_DAY.length - 1) / 2) * dayLineHeight);
+  });
   ctx.restore();
 
-  // 夜側: そのまま
+  // 夜側: "Just a banana"と同じ高さに配置
+  const cyNight = worldMidY * 0.45; // 画面の上から22.5%。下のテキスト(77.5%)と画面中央を挟んで対称
+  const pNight = counterRotatePoint(windowW / 2, cyNight);
+  ctx.save();
+  ctx.translate(pNight.x, pNight.y);
+  ctx.rotate(-theta);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ffffff';
   ctx.font = `italic 400 ${baseSize}px 'EB Garamond', Georgia, serif`;
   ctx.globalAlpha = 0.95 * nightT;
-  ctx.fillText(SEA_TEXT_NIGHT, 0, 0);
+  const nightLineHeight = baseSize * 1.5;
+  SEA_TEXT_NIGHT.forEach((line, i) => {
+    ctx.fillText(line, 0, (i - (SEA_TEXT_NIGHT.length - 1) / 2) * nightLineHeight);
+  });
+  ctx.restore();
+
+}
+
+// 夜の下部テキスト("Existence is not discovery.")。
+// 「The banana was here.」と同じ位置(画面の上から77.5%)に置き、
+// 上の"An apple fell..."(22.5%)と画面中央を挟んで上下対称にする。
+// 夜は画面下側が空(青)の領域になるため、海のクリップの外で描く。
+function drawNightLowerText(ctx) {
+  const theta = rotationDeg * Math.PI / 180;
+  const baseSize = Math.min(windowW, windowH) * 0.045;
+  const cy2 = worldMidY + (windowH - worldMidY) * 0.55; // 画面の上から77.5%("The banana was here."と同じ位置)
+  const p2 = counterRotatePoint(windowW / 2, cy2);
+  ctx.save();
+  ctx.translate(p2.x, p2.y);
+  ctx.rotate(-theta);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `italic 400 ${baseSize * 0.82}px 'EB Garamond', Georgia, serif`;
+  ctx.globalAlpha = 0.9 * nightT;
+  const lowerLineHeight = baseSize * 0.82 * 1.5;
+  SEA_TEXT_NIGHT_LOWER.forEach((line, i) => {
+    ctx.fillText(line, 0, (i - (SEA_TEXT_NIGHT_LOWER.length - 1) / 2) * lowerLineHeight);
+  });
   ctx.restore();
 }
 
@@ -601,6 +642,7 @@ function drawWordmark(ctx) {
 
   // 夜側の文言は回転にそのまま従うので、あらかじめ180度回転させて描いておく。
   // 画面全体の180度回転と打ち消し合って、夜(反転しきった状態)で正立して読めるようにするため。
+  // この位置(空=青の領域)はそのままで、回転後は画面下側の青い部分に表示される。
   ctx.save();
   ctx.translate(windowW / 2, y);
   ctx.rotate(Math.PI);
@@ -694,6 +736,7 @@ function renderScene(ctx, offsetX, offsetY, t) {
   ctx.save();
   ctx.clip(wavePath);
   drawSeaText(ctx);
+  drawNightLowerText(ctx);
   ctx.restore();
 
   ctx.restore();
@@ -708,6 +751,19 @@ function frame(now) {
   nightT += (nightTarget - nightT) * 0.05; // 仮値: イージングの速さ
   rotationDeg += (rotationTarget - rotationDeg) * 0.05; // nightTと同じ速さで追従させる
   curlProgress += (curlTarget - curlProgress) * curlEaseSpeed; // 仮値: 開閉のイージング
+
+  // 扉をめくっていない間は、重ね合わせ用の2層(revealLayer / Three.jsのstage)を非表示にして、
+  // 背景canvasだけでシーン全体を描く。2層を重ねると、拡大(1.008倍)やテクスチャの再サンプリングの
+  // 違いで、本の領域の内と外でバナナやテキストがわずかにズレてゆがんで見えるため。
+  const curling = dragging || curlProgress > 0.002;
+  if (curling !== layersVisible) {
+    layersVisible = curling;
+    const d = curling ? '' : 'none';
+    revealLayer.style.display = d;
+    stageEl.style.display = d;
+  }
+  // 継ぎ目隠しの拡大は、めくり始めに合わせて0->1.008倍へなめらかに上げる(急に画面が動かないように)
+  renderer.domElement.style.transform = `scale(${1 + 0.008 * Math.min(1, curlProgress / 0.05)})`;
 
   sceneRotator.style.transform = `rotate(${rotationDeg}deg)`; // 常に時計回り(目標値を常に+180するため)
 
