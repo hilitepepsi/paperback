@@ -226,10 +226,14 @@ body.orbiting .sub-entry .year{ opacity:0; }
   transform-origin: var(--left) 46%;
 }
 /* the three axes as WebGL cylinders, from the X hit on (see the rig in the script). It lives inside
-   .orbit-viewport so it follows that element's own shift / shrink (--shift-x/y, --fit) for free;
+   .orbit-viewport so it follows that element's own shift / shrink (--shift-x/y, --fit) for free. It is
+   NOT the size of the screen: O sits close to the left edge, so a screen-sized box would cut off the
+   part of X that points left of O. Instead it is a square centred on O, with room for any axis in any pose;
    it comes before .orbit-scene, so the titles and letters are drawn over it. */
 .axes-gl{
-  position:absolute; inset:0; width:100%; height:100%;
+  position:absolute;
+  left:calc(var(--left) - var(--gl-e, 0px)); top:calc(46% - var(--gl-e, 0px));   /* a square centred on O ... */
+  width:calc(2 * var(--gl-e, 0px)); height:calc(2 * var(--gl-e, 0px));           /* ... --gl-e is its half-side (set in JS) */
   display:block; pointer-events:none;
   visibility:hidden;
 }
@@ -740,10 +744,14 @@ const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vD = new THREE.Vector3
 const setRx = (m, deg) => { const t = deg * DEG, c = Math.cos(t), s = Math.sin(t); return m.set(1,0,0,0, 0,c,-s,0, 0,s,c,0, 0,0,0,1); };   // CSS rotateX
 const setRy = (m, deg) => { const t = deg * DEG, c = Math.cos(t), s = Math.sin(t); return m.set(c,0,s,0, 0,1,0,0, -s,0,c,0, 0,0,0,1); };   // CSS rotateY
 
+// half-side of the canvas: the farthest an axis of length h can reach from O on screen, in any camera pose,
+// is a little over h (perspective adds a bit as it grows); checked against 200k random poses
+const glHalf = h => Math.ceil(h * (1.05 + 0.5 * h / GL_D) + 6);
 function projectRig(){
+  root.style.setProperty('--gl-e', glHalf(axisH) + 'px');
   const W = axesCanvas.clientWidth, H = axesCanvas.clientHeight;
   if (!W || !H) return;
-  const n = 100, f = 5000, ox = axisLeft, oy = H * 0.46;                 // O = (var(--left), 46%)
+  const n = 100, f = 5000, ox = W / 2, oy = H / 2;                       // O is the centre of the canvas
   glCam.projectionMatrix.makePerspective(-ox / GL_D * n, (W - ox) / GL_D * n, oy / GL_D * n, -(H - oy) / GL_D * n, n, f);
   glCam.projectionMatrixInverse.copy(glCam.projectionMatrix).invert();
   rig.dirty = true;
@@ -751,6 +759,7 @@ function projectRig(){
 function resizeRig(){
   const W = axesCanvas.clientWidth, H = axesCanvas.clientHeight;
   if (!W || !H) return;
+  glr.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2, 1500 / Math.max(W, H)));   // the box is big: cap the buffer (~1500px a side)
   glr.setSize(W, H, false);                                              // the CSS sets the box
   projectRig();
 }
