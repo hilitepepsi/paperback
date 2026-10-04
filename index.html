@@ -137,6 +137,7 @@ const CURL_MAX_RADIANS = Math.PI * 1.6; // 仮値: 自由端が最大でどこ�
 
 let renderer, scene, camera, geometry, frontMesh, backMesh, canvasTexture;
 let curlProgress = 0; // 0(閉じている) 〜 1(全開)
+let dpr = Math.min(window.devicePixelRatio || 1, 2); // 高解像度画面用の倍率(負荷を抑えるため上限2)
 let layersVisible = true; // revealLayer / stage の表示状態(frame()で切り替える)
 
 function initThree() {
@@ -334,8 +335,11 @@ function resize() {
   windowH = window.innerHeight;
   worldMidY = windowH * 0.5;
 
-  bgCanvas.width = windowW;
-  bgCanvas.height = windowH;
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  bgCanvas.width = Math.round(windowW * dpr);
+  bgCanvas.height = Math.round(windowH * dpr);
+  bgCanvas.style.width = windowW + 'px';
+  bgCanvas.style.height = windowH + 'px';
 
   const raw = computeBookRect();
   // 端数ピクセルによる隙間(継ぎ目の黒い縦線)を防ぐため、整数に丸めて
@@ -347,8 +351,8 @@ function resize() {
     height: Math.round(raw.height),
   };
 
-  offCanvas.width = bookRect.width;
-  offCanvas.height = bookRect.height;
+  offCanvas.width = Math.round(bookRect.width * dpr);
+  offCanvas.height = Math.round(bookRect.height * dpr);
   buildCurlGeometry();
 
   [revealLayer, stageEl].forEach(el => {
@@ -767,12 +771,17 @@ function frame(now) {
 
   sceneRotator.style.transform = `rotate(${rotationDeg}deg)`; // 常に時計回り(目標値を常に+180するため)
 
+  bgCtx.setTransform(dpr, 0, 0, dpr, 0, 0); // 以降の描画はCSSピクセル座標のまま、dpr倍の解像度で出る
   bgCtx.clearRect(0, 0, windowW, windowH);
   renderScene(bgCtx, 0, 0, t);
 
-  offCtx.clearRect(0, 0, bookRect.width, bookRect.height);
-  renderScene(offCtx, bookRect.left, bookRect.top, t);
-  renderThree();
+  // 重ね合わせ層が非表示の間は、offCanvasの描画とテクスチャ更新は不要(負荷削減)
+  if (layersVisible) {
+    offCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    offCtx.clearRect(0, 0, bookRect.width, bookRect.height);
+    renderScene(offCtx, bookRect.left, bookRect.top, t);
+    renderThree();
+  }
 
   requestAnimationFrame(frame);
 }
