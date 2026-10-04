@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <title>Metaphony — tutorial preview</title>
+<script>
+/* Always start from the starburst. The page is driven by the scroll position, and the scroll is locked
+   until the burst is clicked, so a position restored by the browser on reload (or when coming back to
+   the page) would show the middle of the story with the burst on top of it. */
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+window.scrollTo(0, 0);
+// returning through the back/forward cache brings back the old state (opened, scrolled, ...): start over
+window.addEventListener('pageshow', e => { if (e.persisted) location.reload(); });
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;1,400;1,500;1,600&family=Playfair+Display:ital,wght@0,500;0,600;1,500&display=swap" rel="stylesheet">
@@ -496,6 +505,9 @@ body.orbiting .sub-entry .year{ opacity:0; }
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+window.scrollTo(0, 0);          // (see the script in <head>) the story always starts at the burst
+window.addEventListener('load', () => { if (!document.body.classList.contains('opened-once')) window.scrollTo(0, 0); });
 
 const starCanvas = document.getElementById('starCanvas');
 const STAR_COUNT = 500;
@@ -1306,6 +1318,7 @@ requestAnimationFrame(() => {
 burst.addEventListener('click', () => {
   if (opened) return;
   opened = true;
+  document.body.classList.add('opened-once');   // from here on the page may be scrolled: the load handler above leaves it alone
   burst.classList.add('opened');
   entryCatcher.classList.add('show');
   document.body.classList.remove('locked');
